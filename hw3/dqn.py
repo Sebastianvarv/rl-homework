@@ -160,37 +160,28 @@ class QLearner(object):
 
         # YOUR CODE HERE
 
-        # NB! All of the code in this block is not mine, some parts are taken from
-        # the reddit post of the current course subreddit.
-
         self.q_t = q_func(obs_t_float, self.num_actions, scope="q_func", reuse=False)
-        self.q_tp1 = q_func(obs_tp1_float, self.num_actions, scope="target_q_func", reuse=False)
+        current_q = tf.reduce_sum(self.q_t * tf.one_hot(self.act_t_ph, self.num_actions), axis=1)
+        q_target = q_func(obs_tp1_float, self.num_actions, scope="target_q_func", reuse=False)
 
-        # current_q = reduce_sum(
-        #
         if double_q:
-            pass
-        #   next_q_dunc_preds =     reuse q func, obs tp1
-        # action_idx argmax(next_q_func_preds, axis=1)
-        # amx aj prim tf reduce_sum(target_qfunc * tf_onehot(action_idx, num actions), 1
-        # else:
-        # max aj prim= tf. reduce_max(target_qfunc_preds, axis=1)
+            # decorrelate the q-target error by re-using q to pick the max action
+            # and using q-target to get the value of that action
+            self.q_tp1 = q_func(obs_tp1_float, self.num_actions, scope="q_func", reuse=True)
+            act_idx = tf.argmax(self.q_tp1, axis=1)
+            max_aj_prim = tf.reduce_sum(q_target * tf.one_hot(act_idx, self.num_actions), axis=1)
+        else:
+            max_aj_prim = tf.reduce_max(q_target, axis=1)
 
-        # Bellmann error
-        q_tp1_gather_indices = tf.range(self.batch_size) * self.num_actions + tf.argmax(self.q_tp1, axis=1,
-                                                                                        output_type=tf.int32)
-        # the target
-        y = self.rew_t_ph + gamma * tf.gather(tf.reshape(self.q_tp1, [-1]), q_tp1_gather_indices) * (
-        1 - self.done_mask_ph)
+        y = self.rew_t_ph + gamma * max_aj_prim * (1 - self.done_mask_ph)
 
-        # the Q(s, a) indexed by the actual actions taken from the q_func network
-        q_t_gather_indices = tf.range(self.batch_size) * self.num_actions + self.act_t_ph
-        q_t_s_a_values = tf.gather(tf.reshape(self.q_t, [-1]), q_t_gather_indices)
+        self.total_error = huber_loss(current_q - y)
 
-        self.total_error = tf.reduce_mean(huber_loss(y - q_t_s_a_values))
+        q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, "q_func")
 
-        q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='q_func')
-        target_q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='target_q_func')
+        target_q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, "target_q_func")
+
+        # Laura helped me and I used some of the code from presentation for double q
 
         ######
         # construct optimization op (with gradient clipping)
@@ -285,8 +276,8 @@ class QLearner(object):
         # for us to learn something useful -- until then, the model will not be
         # initialized and random actions should be taken
         if (self.t > self.learning_starts and \
-                            self.t % self.learning_freq == 0 and \
-                    self.replay_buffer.can_sample(self.batch_size)):
+                self.t % self.learning_freq == 0 and \
+                self.replay_buffer.can_sample(self.batch_size)):
             # Here, you should perform training. Training consists of four steps:
             # 3.a: use the replay buffer to sample a batch of transitions (see the
             # replay buffer code for function definition, each batch that you sample
@@ -327,11 +318,16 @@ class QLearner(object):
             observations, actions, rewards, next_obs_batch, done_mask = self.replay_buffer.sample(self.batch_size)
 
             if not self.model_initialized:
-                initialize_interdependent_variables(self.session, tf.global_variables(), feed_dict={self.obs_t_ph: observations, self.obs_tp1_ph: next_obs_batch})
+                initialize_interdependent_variables(self.session, tf.global_variables(),
+                                                    feed_dict={self.obs_t_ph: observations,
+                                                               self.obs_tp1_ph: next_obs_batch})
                 self.model_initialized = True
                 print("Mudel initsialiseeritud")
 
-            self.session.run(self.train_fn, feed_dict={self.obs_t_ph: observations, self.act_t_ph: actions, self.rew_t_ph: rewards, self.obs_tp1_ph:next_obs_batch, self.done_mask_ph:done_mask, self.learning_rate: self.optimizer_spec.lr_schedule.value(self.t)})
+            self.session.run(self.train_fn,
+                             feed_dict={self.obs_t_ph: observations, self.act_t_ph: actions, self.rew_t_ph: rewards,
+                                        self.obs_tp1_ph: next_obs_batch, self.done_mask_ph: done_mask,
+                                        self.learning_rate: self.optimizer_spec.lr_schedule.value(self.t)})
 
             self.num_param_updates += 1
 
