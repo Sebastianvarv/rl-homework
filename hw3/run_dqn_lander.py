@@ -47,7 +47,7 @@ def lander_kwargs():
         'optimizer_spec': lander_optimizer(),
         'q_func': lander_model,
         'replay_buffer_size': 50000,
-        'batch_size': 32,
+        'batch_size': 64,
         'gamma': 1.00,
         'learning_starts': 1000,
         'learning_freq': 1,

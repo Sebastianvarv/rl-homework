@@ -67,7 +67,7 @@ def atari_learn(env,
         session=session,
         exploration=exploration_schedule,
         stopping_criterion=stopping_criterion,
-        replay_buffer_size=1000000,
+        replay_buffer_size=100000,
         batch_size=32,
         gamma=0.99,
         learning_starts=50000,
@@ -75,7 +75,7 @@ def atari_learn(env,
         frame_history_len=4,
         target_update_freq=10000,
         grad_norm_clipping=10,
-        double_q=True
+        double_q=False
     )
     env.close()
 
